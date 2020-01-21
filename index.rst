@@ -53,7 +53,7 @@ The different use cases for processing data are described in :cite:`DMTN-111` an
 Data processing must be triggered in some way with enough information to be able to work out which data to process and which analysis pipeline to use.
 The unique identifier for every observation is the "Observation Identifier" (aka "obsid" aka "image name") that is guaranteed by the observatory systems to be unique for every observation regardless of telescope (main telescope vs AuxTel), instrument, or which controller was involved to take the data.
 This obsid is issued by the camera control system whenever data are acquired.
-Additionally, there is a "grouping" concept that can be used by scripts to indicate that observations taken with the same group identifier are related.[*]_
+Additionally, there is a "grouping" concept that can be used by scripts to indicate that observations taken with the same group identifier are related.\ [*]_
 The group ID is how standard visits will be observed with both snaps being part of the same group.
 The group ID will be provided to each script by the ScriptQueue and will be uniquely defined for that execution of the script.
 The system will guarantee that no observing script will ever be given the same group ID.
