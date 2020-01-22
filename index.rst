@@ -59,9 +59,9 @@ The group ID will be provided to each script by the ScriptQueue and will be uniq
 The system will guarantee that no observing script will ever be given the same group ID.
 
 Since DM software always mediates data access via a Data Butler this leads to a requirement that raw data must always be retrievable from a butler with a Data ID solely containing the obsid.
-Additionally the detector name can be specified in order to process a subset of the acquired data, and if a group ID is given instead of an obsid, multiple observations can be processed together.
+Additionally the detector can be specified in order to process a subset of the acquired data, and if a group ID is given instead of an obsid, multiple observations can be processed together.
 
-All data products generated using this system are treated as transient data products that will not be archived and will not be required to include permanent provenance tracking.
+All data products generated using this system are treated as transient data products that will not be archived at the Data Facility and will not be required to include permanent provenance tracking.
 The purpose is to provide early feedback to observing in the form of data quality assessments.
 
 .. [*] In :cite:`LTS-836` the group ID is called a "transaction ID" since it is associated with a single queue transaction.
@@ -74,7 +74,7 @@ The purpose is to provide early feedback to observing in the form of data qualit
 Controlling Data Processing from Observing Scripts
 ==================================================
 
-In the initial design of the OCS Controlled Pipeline System (OCPS) [*]_ the pipeline processing will be controlled directly by commands sent from the observing script to a CSC.
+In the initial design of the OCS Controlled Pipeline System (OCPS) [*]_ the pipeline processing will be controlled directly by commands sent from the observing script to the OCPS CSC.
 The commands will indicate which data to process and the name of the pipeline to execute but they will not include algorithmic code.
 The data will be specified using a "dataId" to match standard Data Butler usage.
 Once the pipeline completes an event will be published.
@@ -103,7 +103,7 @@ To deal with this case Python observing scripts shall be given an API to generat
 
 As pipelines execute, they will be able to calculate data quality assessment metrics and other results of interest such as centroids.
 These can be published as telemetry to allow them to be displayed to the observer.
-This telemetry can be received by the observing script that issued the data processing request, allowing the script to fine tune its observing strategy.
+This telemetry can be received by the observing script that issued the data processing request, allowing the script to fine tune its observing strategy (such as adjusting the CBP pointing).
 These metrics should be associated with the history of the exposure in the same way as observer comments are associated with specific observations.
 
 .. note::
