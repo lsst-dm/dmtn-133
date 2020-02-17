@@ -53,7 +53,7 @@ The different use cases for processing data are described in :cite:`DMTN-111` an
 Data processing must be triggered in some way with enough information to be able to work out which data to process and which analysis pipeline to use.
 The unique identifier for every observation is the "Observation Identifier" (aka "obsid" aka "image name") that is guaranteed by the observatory systems to be unique for every observation regardless of telescope (main telescope vs AuxTel), instrument, or which controller was involved to take the data.
 This obsid is issued by the camera control system whenever data are acquired.
-Additionally, there is a "grouping" concept that can be used by scripts to indicate that observations taken with the same group identifier are related.\ [*]_
+Additionally, there is a "grouping" concept that can be used by scripts to indicate that observations taken with the same group identifier are related.\ [#f1]_
 The group ID is how standard visits will be observed with both snaps being part of the same group.
 The group ID will be provided to each script by the ScriptQueue and will be uniquely defined for that execution of the script.
 The system will guarantee that no observing script will ever be given the same group ID.
@@ -64,22 +64,19 @@ Additionally the detector can be specified in order to process a subset of the a
 All data products generated using this system are treated as transient data products that will not be archived at the Data Facility and will not be required to include permanent provenance tracking.
 The purpose is to provide early feedback to observing in the form of data quality assessments.
 
-.. [*] In :cite:`LTS-836` the group ID is called a "transaction ID" since it is associated with a single queue transaction.
-
 .. note::
 
-  No LSST rapid analysis pipelines are required to co-add data incrementally.
-  Pipelines should not co-add data as it arrives and should always defer co-addition until the final observation in the group has been taken.
+  No LSST rapid analysis pipelines are required to combine data incrementally.
+  Pipelines should not combine data as it arrives and should always defer group processing until the final observation in the group has been taken.
 
 Controlling Data Processing from Observing Scripts
 ==================================================
 
-In the initial design of the OCS Controlled Pipeline System (OCPS) [*]_ the pipeline processing will be controlled directly by commands sent from the observing script to the OCPS CSC.
+In the initial design of the OCS Controlled Pipeline System (OCPS) [#f2]_ the pipeline processing will be controlled directly by commands sent from the observing script to the OCPS CSC.
 The commands will indicate which data to process and the name of the pipeline to execute but they will not include algorithmic code.
+OCPS should be configurable to allow development pipelines and development science pipelines packages to be used.
 The data will be specified using a "dataId" to match standard Data Butler usage.
 Once the pipeline completes an event will be published.
-
-.. [*] In :cite:`LDM-148` this is called the "OCS-Controlled Batch Service."
 
 The sequence of events for a typical observing script would then be:
 
@@ -88,10 +85,10 @@ The sequence of events for a typical observing script would then be:
 * Wait for the event indicating that the exposure has been written to the OODS (see :cite:`DMTN-111`).
   This event will include the relevant obsid.
 * Send a command to the OCPS requesting that this obsid be processed.
-  This command should include the name of the pipeline to execute.
+  This command should include the name of the pipeline to execute, possibly the name of a configuration file to use and maybe explicit overrides of default configurations.
 * Acquire more data and send processing requests for each one.
-* When all data are acquired and single-frame processing has completed, send a command to the OCPS requesting that a co-add pipeline be executed with all data using the shared groupId.
-* An observing script can finish as soon as it has sent the final co-add command to the OCPS.
+* When all data are acquired and single-frame processing has completed, send a command to the OCPS requesting that a pipeline be executed combining all data using the shared groupId.\ [#f3]_
+* An observing script can finish as soon as it has sent the final combination command to the OCPS.
 
 In some cases a complex script might require multiple groups to be defined during execution.
 To deal with this case Python observing scripts shall be given an API to generate a new unique group ID from the value supplied to the script from the ScriptQueue.
@@ -105,6 +102,11 @@ As pipelines execute, they will be able to calculate data quality assessment met
 These can be published as telemetry to allow them to be displayed to the observer.
 This telemetry can be received by the observing script that issued the data processing request, allowing the script to fine tune its observing strategy (such as adjusting the CBP pointing).
 These metrics should be associated with the history of the exposure in the same way as observer comments are associated with specific observations.
+
+Image display of resulting datasets should not be under the control of the observing script.
+Scripts should not have to know whether an observer is interested in seeing an image or not.
+Ideally an asynchronous display mediator task should exist that can be configured to be interested in specific dataset types.
+It can either be contacted directly by the running pipelines ("I've just created dataset X") and decide whether it's interested, or else it can monitor a butler repository waiting for datasets to appear.
 
 .. note::
 
@@ -127,30 +129,21 @@ It could also be a full Gen 3 pipeline executed by ``pipetask``.
 It is though important that the OCPS knows when processing completes and also knows whether processing succeeded.
 There also needs to be a mechanism for funneling metrics from the pipelines to the OCPS so that they can be issued as telemetry.
 
-Open Questions
---------------
+Design Decisions
+----------------
 
-There are some details that need to be considered:
-
-* If there is a delay in ingesting the previous observation into the OODS, how does the observing script know that the event that was received is for the correct observation?
-  Should it listen for the camera event indicating that the data were taken and read the obsid from that event?
-* If the OCPS is still handling the previous processing request when the new command arrives what should happen?
-  Should it return immediately with a busy status?
-  Should it queue the request?
-  Should it block until the prior processing has completed but timeout if it is taking too long?
-* Should the OCPS check that the data really are in the OODS before accepting the command?
-  There is nothing in the system to prevent an observing script from sending the process command before ingestion.
-* Should the observing script wait for the event from the OCPS indicating that the data were processed to completion before taking more data?
-  Generally it should not wait unless it is interested in the telemetry.
-* If data fail processing for some reason should the observing script be expected to know about it?
-  Should the completion event indicate whether the pipeline completed without error?
-* If data are processed but some QA metric fails, should it be included in the co-add?
-  Failing QA will result in the output data being stored in the Butler repository and would likely result in good pipeline exit status.
-* Should metrics be published to the SQuaSH system in addition to being published as telemetry?
-  Given the transient nature of the summit data products and the presence of the metrics in the EFD via telemetry, it may not be necessary to also store them in SQuaSH.
-* Does SAL require that all metrics that could possibly be reported from a pipeline be declared in advance?
-  Or can metrics be issued as a JSON document and allow any content?
-  Does LOVE work in such a dynamic environment?
+* Observing scripts should listen to the ``startIntegration`` event from the camera to ensure that they are listening for the correct data being available in the OODS (OODS will not know about the groupId but will know about obsid).
+* It should be possible for the OCPS to receive a processing command whilst a previous processing job is running.
+* The OCPS can run in a synchronous or asynchronous mode
+  In synchronous mode only a single job can be handled at a time with other requests rejected and the command completing when the processing completes.
+  In asynchronous mode multiple processing requests can be queued and separate messages are issued as they complete.
+* If a command is sent to the OCPS before the relevant data have been ingested, pipelines should not be held back but failure from the pipelines should be reported.
+* When an observing script sends its final command to the OCPS it should not wait for processing to complete unless the script requires that the outcome of the processing affects further observing.
+* Completion events from OCPS should indicate whether processing was successful or not.
+* QA results are not reported by the OCPS but must be monitored independently.
+  It is likely that failing QA would still result in a good completion status from the pipeline.
+* Metrics should be published through the EFD in the same form as those published by Prompt Processing.
+  Additionally some mechanism maybe included for integrating metrics into the SQuaSH system. :cite:`SQR-009`
 
 Camera Diagnostic Cluster
 =========================
@@ -169,31 +162,12 @@ Conclusions
 A system is proposed to allow observing scripts to initiate data processing of data taken by that observing script.
 It uses a well-defined interface to make processing requests and can wait for completion events or continue to take additional data.
 
-Appendix A: Future Options
-==========================
+.. rubric:: Footnotes
 
-In the above design, the observing script makes individual requests to the processing system.
-An alternative approach can also be considered whereby the OCPS listens directly to the OODS and automatically processes the data without being commanded to do so by the observing script.
-The OCPS would issue an event when data are sent for processing and an event when processing has completed.
-For standard survey observing this approach is more than adequate and simplifies observing scripts.
-We may consider using this scheme during survey operations to allow observing scripting to be more decoupled from data processing, whilst allowing more direct control in commissioning observing.
-
-For this system to work whilst allowing a specific pipeline to be specified (rather than working it out from the observing mode or survey name) the observing script would need to ensure that the pipeline name is stored in the file's FITS header (which can be part of the camera take images command).
-
-A metadata driven processing system does become harder in the scenario where multiple observations must be combined.
-The observing script needs some way to indicate that the set of data from that script execution is now complete and must be processed together.
-One way of doing this is to include a "group has ended" boolean in the file header.
-There is some subtlety over which pipeline should run for co-addition and whether it's a single pipeline that includes the single frame processing (in which case that pipeline should pause whilst new data arrive) or a distinct pipeline that takes the inputs from single frame processing and is related to the pipeline name specified in the header using some agreed upon convention.
-
-If data arrives whilst previous data is being processed, the behavior on how to act could be configurable.
-It's reasonable to ignore that data and only process data that arrive whilst the processing system is free.
-If there are sufficient compute resources the data could be sent to the pipelines but load management would then have to be implemented to ensure that the system doesn't continue to back up even further.
-Some data might be marked as always having to be processed and other data could be allowed to be skipped.
-
-If the ScriptQueue is told to stop the observing script early such that the "group complete" flag will never turn up, the ScriptQueue can send a command to the OCPS to trigger the co-addition pipeline.
-OCPS could also notice a change of group ID and be configured complete any processing.
-The general approach though is that the observing script does not know anything about the OCPS but can control which observations are co-added and which pipeline to use by ensuring that the file headers include this information.
-This metadata-mediated processing approach is similar to that used by ORAC-DR :cite:`2015A&C.....9...40J`.
+.. [#f1] In :cite:`LTS-836` the group ID is called a "transaction ID" since it is associated with a single queue transaction.
+.. [#f2] In :cite:`LDM-148` this is called the "OCS-Controlled Batch Service."
+.. [#f3] It's an open question whether the pipeline should be preconfigured to expect a fixed number of exposures to arrive and then automatically run the "gather" step, or if the observing script should trigger the "gather" step.
+       In the initial design it is simpler to be explicit.
 
 
 .. rubric:: References
